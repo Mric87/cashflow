@@ -1,14 +1,19 @@
+import os
 import streamlit as st
 from openai import OpenAI
 from datetime import datetime
-from typing import Dict
 
-# Create OpenAI client with secret key
-openai.api_key = st.secrets["openai_api_key"]
+# Load OpenAI API key (works with both st.secrets and env vars)
+api_key = st.secrets.get("openai_api_key", os.getenv("OPENAI_API_KEY"))
+if not api_key:
+    st.error("Missing OpenAI API key in secrets.toml or environment variables.")
+    st.stop()
 
-# Bot personalities
+# Initialize OpenAI client
+client = OpenAI(api_key=api_key)
+
+# Predefined bot personalities
 BOT_PERSONALITIES = {
-    "Helper Bot": "You are a helpful assistant.",
     "Startup Strategist": "You specialize in helping new businesses with planning and execution.",
     "Hip-Hop Guru": (
         "Welcome to Hip-Hop Guru, the chatbot that knows the beats, rhymes, and stories of the hip-hop world! "
@@ -25,50 +30,46 @@ BOT_PERSONALITIES = {
     ),
 }
 
-# Session state initialization
+# Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "selected_bot" not in st.session_state:
-    st.session_state.selected_bot = "Helper Bot"
+    st.session_state.selected_bot = "Startup Strategist"
 
-st.title("🤖 Multi-Bot Chat Assistant")
+# Sidebar: bot selector
+st.sidebar.title("Choose a Chatbot")
+selected_bot = st.sidebar.selectbox("Select a personality:", list(BOT_PERSONALITIES.keys()))
+st.session_state.selected_bot = selected_bot
 
-# Bot selector in sidebar
-st.sidebar.header("🧠 Choose Your Bot")
-bot_choice = st.sidebar.selectbox("Select a chatbot personality:", list(BOT_PERSONALITIES.keys()))
-st.session_state.selected_bot = bot_choice
-st.sidebar.markdown(f"**Current Bot:** `{bot_choice}`")
+# Main UI
+st.title(f"🤖 {selected_bot}")
+st.markdown("Chat with your custom AI bot below:")
 
-# Send message using OpenAI SDK v1+
-def send_message_to_openai(message: str, bot_personality: str) -> Dict:
+# Chat display
+for entry in st.session_state.messages:
+    with st.chat_message(entry["role"]):
+        st.markdown(entry["content"])
+
+# Input form
+if prompt := st.chat_input("Type your message here..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Call OpenAI API
     try:
-        chat_response = client.chat.completions.create(
+        full_response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": bot_personality},
-                {"role": "user", "content": message},
+                {"role": "system", "content": BOT_PERSONALITIES[selected_bot]},
+                *st.session_state.messages
             ],
         )
-        return {"response": chat_response.choices[0].message.content}
+        reply = full_response.choices[0].message.content
     except Exception as e:
-        st.error(f"OpenAI API Error: {str(e)}")
-        return {"response": f"Error: {str(e)}"}
+        reply = f"⚠️ OpenAI Error: {str(e)}"
 
-# Display chat history
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# User input handling
-if user_input := st.chat_input("Type your message here..."):
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    bot_system_prompt = BOT_PERSONALITIES.get(st.session_state.selected_bot, "You are a helpful assistant.")
-    reply = send_message_to_openai(user_input, bot_system_prompt)
-
-    st.session_state.messages.append({"role": "assistant", "content": reply["response"]})
+    st.session_state.messages.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
-        st.markdown(reply["response"])
+        st.markdown(reply)
 
