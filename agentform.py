@@ -1,12 +1,12 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from datetime import datetime
 from typing import Dict
 
-# Set your OpenAI API key securely
-openai.api_key = st.secrets["openai_api_key"]
+# Create OpenAI client with secret key
+client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-# Predefined bot personalities
+# Bot personalities
 BOT_PERSONALITIES = {
     "Helper Bot": "You are a helpful assistant.",
     "Startup Strategist": "You specialize in helping new businesses with planning and execution.",
@@ -25,7 +25,7 @@ BOT_PERSONALITIES = {
     ),
 }
 
-# Initialize session state
+# Session state initialization
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "selected_bot" not in st.session_state:
@@ -33,42 +33,42 @@ if "selected_bot" not in st.session_state:
 
 st.title("🤖 Multi-Bot Chat Assistant")
 
-# Sidebar bot selection
+# Bot selector in sidebar
 st.sidebar.header("🧠 Choose Your Bot")
 bot_choice = st.sidebar.selectbox("Select a chatbot personality:", list(BOT_PERSONALITIES.keys()))
 st.session_state.selected_bot = bot_choice
-st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Current Bot:** `{bot_choice}`")
 
+# Send message using OpenAI SDK v1+
 def send_message_to_openai(message: str, bot_personality: str) -> Dict:
     try:
-        response = openai.ChatCompletion.create(
+        chat_response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": bot_personality},
                 {"role": "user", "content": message},
             ],
         )
-        return {"response": response["choices"][0]["message"]["content"]}
+        return {"response": chat_response.choices[0].message.content}
     except Exception as e:
         st.error(f"OpenAI API Error: {str(e)}")
         return {"response": f"Error: {str(e)}"}
 
-# Chat display
-for chat in st.session_state.messages:
-    with st.chat_message(chat["role"]):
-        st.markdown(chat["content"])
+# Display chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# User input
+# User input handling
 if user_input := st.chat_input("Type your message here..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    bot_personality = BOT_PERSONALITIES.get(st.session_state.selected_bot, "You are a helpful assistant.")
-    result = send_message_to_openai(user_input, bot_personality)
-    assistant_reply = result["response"]
+    bot_system_prompt = BOT_PERSONALITIES.get(st.session_state.selected_bot, "You are a helpful assistant.")
+    reply = send_message_to_openai(user_input, bot_system_prompt)
 
-    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+    st.session_state.messages.append({"role": "assistant", "content": reply["response"]})
     with st.chat_message("assistant"):
-        st.markdown(assistant_reply)
+        st.markdown(reply["response"])
+
