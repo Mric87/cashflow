@@ -1,189 +1,74 @@
 import streamlit as st
-import requests
-import json
-from typing import Dict, Optional
+import openai
+from datetime import datetime
+from typing import Dict
 
-def add_bot_personality_form():
-    """
-    Streamlit form component for adding new bot personalities
-    """
-    st.subheader("🤖 Add New Bot Personality")
-    
-    with st.form("add_bot_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            agent_name = st.text_input(
-                "Bot Name*", 
-                placeholder="e.g., Marketing Guru, Code Assistant",
-                help="Enter a unique name for your bot personality"
-            )
-            
-            github_owner = st.text_input(
-                "GitHub Owner*",
-                placeholder="your-github-username",
-                help="GitHub repository owner username"
-            )
-            
-            github_repo = st.text_input(
-                "GitHub Repository*",
-                placeholder="your-repo-name",
-                help="Name of the GitHub repository"
-            )
-        
-        with col2:
-            description = st.text_area(
-                "Bot Description*",
-                placeholder="Describe the bot's personality, expertise, and role...",
-                height=100,
-                help="Detailed description of the bot's capabilities and personality"
-            )
-            
-            file_path = st.text_input(
-                "File Path",
-                value="streamlit_app.py",
-                help="Path to the Python file containing bot personalities"
-            )
-            
-            n8n_webhook_url = st.text_input(
-                "n8n Webhook URL*",
-                placeholder="https://your-n8n-instance.com/webhook/update-bot-personality",
-                help="Your n8n workflow webhook URL"
-            )
-        
-        submitted = st.form_submit_button("Add Bot Personality", type="primary")
-        
-        if submitted:
-            if not all([agent_name, description, github_owner, github_repo, n8n_webhook_url]):
-                st.error("Please fill in all required fields marked with *")
-            else:
-                with st.spinner("Adding bot personality..."):
-                    result = send_to_n8n_workflow(
-                        agent_name=agent_name,
-                        description=description,
-                        github_owner=github_owner,
-                        github_repo=github_repo,
-                        file_path=file_path,
-                        webhook_url=n8n_webhook_url
-                    )
-                    
-                    if result["success"]:
-                        st.success(f"✅ {result['message']}")
-                        st.info(f"Commit SHA: {result.get('commit_sha', 'N/A')}")
-                        
-                        # Clear form by rerunning
-                        if st.button("Add Another Bot"):
-                            st.rerun()
-                    else:
-                        st.error(f"❌ Failed to add bot: {result['message']}")
+# Set your OpenAI API key securely
+openai.api_key = st.secrets["openai_api_key"]
 
-def send_to_n8n_workflow(
-    agent_name: str,
-    description: str,
-    github_owner: str,
-    github_repo: str,
-    file_path: str,
-    webhook_url: str
-) -> Dict:
-    """
-    Send bot personality data to n8n workflow
-    
-    Args:
-        agent_name: Name of the bot
-        description: Bot's personality description
-        github_owner: GitHub repository owner
-        github_repo: GitHub repository name
-        file_path: Path to the file to update
-        webhook_url: n8n webhook URL
-    
-    Returns:
-        Dict with success status and message
-    """
-    payload = {
-        "agent_name": agent_name,
-        "description": description,
-        "github_owner": github_owner,
-        "github_repo": github_repo,
-        "file_path": file_path
-    }
-    
+# Predefined bot personalities
+BOT_PERSONALITIES = {
+    "Helper Bot": "You are a helpful assistant.",
+    "Startup Strategist": "You specialize in helping new businesses with planning and execution.",
+    "Hip-Hop Guru": (
+        "Welcome to Hip-Hop Guru, the chatbot that knows the beats, rhymes, and stories of the hip-hop world! "
+        "Whether you're curious about the origins of the genre, looking for the latest news on your favorite artists, "
+        "or searching for song lyrics and meanings, Hip-Hop Guru has got you covered."
+    ),
+    "Generational Copy": (
+        "At Generational Copy, LLC, we specialize in helping each generation write and share their unique stories. "
+        "Whether you're a first-time writer or a seasoned author, our tailored services guide you through the writing process."
+    ),
+    "Jasmine Renee": (
+        "I am a motivational speaker with a message sharing God’s love that inspires others to align with their Divine Connection. "
+        "My goal is to inspire hope, connection, and mindful living."
+    ),
+}
+
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "selected_bot" not in st.session_state:
+    st.session_state.selected_bot = "Helper Bot"
+
+st.title("🤖 Multi-Bot Chat Assistant")
+
+# Sidebar bot selection
+st.sidebar.header("🧠 Choose Your Bot")
+bot_choice = st.sidebar.selectbox("Select a chatbot personality:", list(BOT_PERSONALITIES.keys()))
+st.session_state.selected_bot = bot_choice
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"**Current Bot:** `{bot_choice}`")
+
+def send_message_to_openai(message: str, bot_personality: str) -> Dict:
     try:
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=30
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": bot_personality},
+                {"role": "user", "content": message},
+            ],
         )
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {
-                "success": False,
-                "message": f"HTTP {response.status_code}: {response.text}"
-            }
-            
-    except requests.exceptions.RequestException as e:
-        return {
-            "success": False,
-            "message": f"Request failed: {str(e)}"
-        }
+        return {"response": response["choices"][0]["message"]["content"]}
+    except Exception as e:
+        st.error(f"OpenAI API Error: {str(e)}")
+        return {"response": f"Error: {str(e)}"}
 
-def manage_bot_personalities():
-    """
-    Main function to manage bot personalities with form and current list
-    """
-    st.title("🤖 Bot Personality Manager")
-    
-    # Configuration section
-    with st.expander("⚙️ Configuration", expanded=False):
-        st.info("""
-        **Setup Instructions:**
-        1. Import the n8n workflow JSON into your n8n instance
-        2. Configure your GitHub credentials in n8n
-        3. Update the webhook URL in the form below
-        4. Fill in your GitHub repository details
-        """)
-        
-        st.code("""
-        Required n8n Setup:
-        - GitHub API credentials configured
-        - Webhook trigger activated
-        - All nodes properly connected
-        """)
-    
-    # Current bot personalities display
-    with st.expander("📋 Current Bot Personalities", expanded=True):
-        current_bots = {
-            "Startup Strategist": "You specialize in helping new businesses with planning and execution.",
-            "Hip-Hop Guru": "Welcome to Hip-Hop Guru, the chatbot that knows the beats, rhymes, and stories of the hip-hop world!",
-            "Generational Copy": "At Generational Copy, LLC, we specialize in helping each generation write and share their unique stories.",
-            "Jasmine Renee": "I am a motivational speaker with a message sharing God's love that inspires others to align with their Divine Connection."
-        }
-        
-        for bot_name, description in current_bots.items():
-            with st.container():
-                st.write(f"**{bot_name}**")
-                st.write(f"_{description[:100]}{'...' if len(description) > 100 else ''}_")
-                st.divider()
-    
-    # Add new bot form
-    add_bot_personality_form()
-    
-    # Usage tips
-    with st.expander("💡 Tips for Creating Bot Personalities"):
-        st.markdown("""
-        **Good Bot Personality Descriptions:**
-        - Be specific about the bot's expertise area
-        - Include the tone and style of communication
-        - Mention any special knowledge or focus areas
-        - Keep descriptions concise but informative
-        
-        **Examples:**
-        - "I'm a fitness coach specializing in strength training and nutrition guidance for beginners."
-        - "I help students with math problems, explaining concepts step-by-step in simple terms."
-        - "I'm a creative writing assistant focused on storytelling techniques and character development."
-        """)
+# Chat display
+for chat in st.session_state.messages:
+    with st.chat_message(chat["role"]):
+        st.markdown(chat["content"])
 
-if __name__ == "__main__":
-    manage_bot_personalities()
+# User input
+if user_input := st.chat_input("Type your message here..."):
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    bot_personality = BOT_PERSONALITIES.get(st.session_state.selected_bot, "You are a helpful assistant.")
+    result = send_message_to_openai(user_input, bot_personality)
+    assistant_reply = result["response"]
+
+    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
+    with st.chat_message("assistant"):
+        st.markdown(assistant_reply)
