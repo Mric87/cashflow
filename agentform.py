@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict
 
 # Create OpenAI client with secret key
-client = OpenAI(api_key=st.secrets["openai_api_key"])
+openai.api_key = st.secrets["openai_api_key"]
 
 # Bot personalities
 BOT_PERSONALITIES = {
