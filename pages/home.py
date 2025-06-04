@@ -4,7 +4,7 @@ import json
 from typing import Dict
 
 # Hardcoded n8n webhook URL - update this with your actual webhook URL
-N8N_WEBHOOK_URL = "https://your-n8n-instance.com/webhook/update-bot-personality"
+N8N_WEBHOOK_URL = "https://agentonline-u29564.vm.elestio.app/webhook-test/update-bot-personality"
 
 def add_bot_personality_form():
     """
